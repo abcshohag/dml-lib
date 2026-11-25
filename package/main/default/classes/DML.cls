@@ -139,6 +139,9 @@ global inherited sharing class DML implements Committable {
         Committable discardWork();
         Committable commitHook(DML.Hook callback);
         Committable combineOnDuplicate();
+        // Stages
+        Committable nextStage(); // records registered after this call are committed after everything registered before it
+        Committable doWork(DML.Work work); // runs custom logic (e.g. SOQL) between stages; records it registers go to the following stage
         // Save
         Result dryRun();
         Result commitWork();
@@ -275,6 +278,12 @@ global inherited sharing class DML implements Committable {
         void after(Result result);
     }
 
+    // Stages
+
+    global interface Work {
+        void execute(DML.Committable nextStage);
+    }
+
     // Logger
 
     global interface Logger {
@@ -294,9 +303,11 @@ global inherited sharing class DML implements Committable {
     }
 
     private Configuration configuration;
-    private OperationsStorage operationsStorage;
 
-    private Orchestrator orchestrator;
+    private List<ExecutionStep> steps;
+    private DmlStageStep currentStage;
+
+    private Boolean isWorkScope = false;
 
     private Hook hook;
 
@@ -337,15 +348,27 @@ global inherited sharing class DML implements Committable {
 
     global DML() {
         this.configuration = new Configuration();
-        this.operationsStorage = new OperationsStorage();
-        this.orchestrator = new DefaultOrchestrator(this.configuration);
+        this.initializeSteps(new OperationsStorage());
     }
 
     global DML(List<DML.OperationType> operationOrder) {
         this.configuration = new Configuration();
         this.configuration.customOperationOrder = operationOrder;
-        this.operationsStorage = new OperationsStorage();
-        this.orchestrator = new CustomOrderOrchestrator(this.configuration);
+        this.initializeSteps(new OperationsStorage());
+    }
+
+    // Scoped instance passed to DML.Work.execute(). It shares the configuration of the parent DML,
+    // and everything registered on it is queued in the stage that follows the work.
+    private DML(Configuration configuration, DmlStageStep followingStage) {
+        this.configuration = configuration;
+        this.steps = new List<ExecutionStep>{ followingStage };
+        this.currentStage = followingStage;
+        this.isWorkScope = true;
+    }
+
+    private void initializeSteps(OperationsStorage operationsStorage) {
+        this.currentStage = new DmlStageStep(this.configuration, operationsStorage);
+        this.steps = new List<ExecutionStep>{ this.currentStage };
     }
 
     // Insert
@@ -640,26 +663,26 @@ global inherited sharing class DML implements Committable {
     // Helpers
 
     private OperationResult executeImmediately(DmlOperation operation, Record record) {
-        DmlOperation existing = this.operationsStorage.getOrRegister(operation);
+        DmlOperation existing = this.currentStage.operationsStorage.getOrRegister(operation);
         OperationResult result = existing.commitWork(new List<EnhancedRecord>{ record.get() });
         this.storeResult(result);
         return result;
     }
 
     private OperationResult executeImmediately(DmlOperation operation, Records records) {
-        DmlOperation existing = this.operationsStorage.getOrRegister(operation);
+        DmlOperation existing = this.currentStage.operationsStorage.getOrRegister(operation);
         OperationResult result = existing.commitWork(records);
         this.storeResult(result);
         return result;
     }
 
     private Committable register(DmlOperation operation, Record record) {
-        this.orchestrator.register(this.operationsStorage.getOrRegister(operation), record);
+        this.currentStage.register(operation, record);
         return this;
     }
 
     private Committable register(DmlOperation operation, Records records) {
-        this.orchestrator.register(this.operationsStorage.getOrRegister(operation), records);
+        this.currentStage.register(operation, records);
         return this;
     }
 
@@ -674,6 +697,30 @@ global inherited sharing class DML implements Committable {
 
     global void preview() {
         this.configuration.preview();
+
+        if (this.steps.size() > 1) {
+            this.previewStages();
+        }
+    }
+
+    private void previewStages() {
+        List<String> stepDescriptions = new List<String>();
+        Integer stageNumber = 0;
+
+        for (ExecutionStep step : this.steps) {
+            if (step instanceof DmlStageStep) {
+                stageNumber++;
+                stepDescriptions.add('Stage ' + stageNumber);
+                continue;
+            }
+
+            stepDescriptions.add(step.getDescription());
+        }
+
+        System.debug(
+            LoggingLevel.ERROR,
+            '\n\n============ DML Stages ============' + '\n' + String.join(stepDescriptions, ' -> ') + '\n=======================================\n'
+        );
     }
 
     // Field Level Security
@@ -736,6 +783,7 @@ global inherited sharing class DML implements Committable {
     }
 
     global Committable discardWork() {
+        this.assertNotInWorkScope('discardWork()');
         this.reset();
         return this;
     }
@@ -743,11 +791,56 @@ global inherited sharing class DML implements Committable {
     // Hooks
 
     global Committable commitHook(Hook callback) {
+        this.assertNotInWorkScope('commitHook()');
         this.hook = callback;
         return this;
     }
 
+    // Stages
+
+    global Committable nextStage() {
+        this.assertNotInWorkScope('nextStage()');
+        this.addStage(new DmlStageStep(this.configuration));
+        return this;
+    }
+
+    global Committable doWork(Work work) {
+        this.assertNotInWorkScope('doWork()');
+
+        if (work == null) {
+            throw new DmlException('Invalid argument: work. DML.Work cannot be null.');
+        }
+
+        DmlStageStep followingStage = new DmlStageStep(this.configuration);
+
+        this.steps.add(new CustomWorkStep(work, followingStage, this.configuration));
+        this.addStage(followingStage);
+
+        return this;
+    }
+
+    private void addStage(DmlStageStep stage) {
+        this.steps.add(stage);
+        this.currentStage = stage;
+    }
+
+    private void executeSteps(DmlResult result) {
+        for (ExecutionStep step : this.steps) {
+            step.execute(result);
+        }
+    }
+
+    private void assertNotInWorkScope(String methodName) {
+        if (this.isWorkScope) {
+            throw new DmlException(
+                methodName + ' is not supported inside DML.Work. Register records on the provided Committable; they are committed with the stage that follows the work.'
+            );
+        }
+    }
+
     global Result dryRun() {
+        this.assertNotInWorkScope('dryRun()');
+
         Savepoint savePoint = Database.setSavepoint();
 
         try {
@@ -755,7 +848,7 @@ global inherited sharing class DML implements Committable {
 
             this.hook?.before();
 
-            this.orchestrator.execute(result);
+            this.executeSteps(result);
 
             this.hook?.after(result);
 
@@ -767,12 +860,14 @@ global inherited sharing class DML implements Committable {
     }
 
     global Result commitWork() {
+        this.assertNotInWorkScope('commitWork()');
+
         DmlResult result = new DmlResult();
 
         try {
             this.hook?.before();
 
-            this.orchestrator.execute(result);
+            this.executeSteps(result);
 
             this.storeResult(result);
 
@@ -800,6 +895,8 @@ global inherited sharing class DML implements Committable {
     }
 
     global Result commitTransaction() {
+        this.assertNotInWorkScope('commitTransaction()');
+
         if (!this.configuration.allOrNone) {
             throw new DmlException('commitTransaction() is not supported when allOrNone=false');
         }
@@ -817,12 +914,8 @@ global inherited sharing class DML implements Committable {
     }
 
     private void reset() {
-        if (this.configuration.customOperationOrder == null) {
-            this.orchestrator = new DefaultOrchestrator(this.configuration);
-            return;
-        }
-
-        this.orchestrator = new CustomOrderOrchestrator(this.configuration);
+        // Back to a single, empty stage. The first stage's operations storage is kept, as before multi-stage support.
+        this.initializeSteps(((DmlStageStep) this.steps[0]).operationsStorage);
     }
 
     private class OperationsStorage {
@@ -839,6 +932,69 @@ global inherited sharing class DML implements Committable {
             }
 
             return existing;
+        }
+    }
+
+    // Stages run one after another in the same Apex transaction, so each stage sees the changes and Ids of the previous ones.
+    // commitTransaction() wraps all of them in one savepoint.
+    private interface ExecutionStep {
+        void execute(DmlResult result);
+        String getDescription();
+    }
+
+    private inherited sharing class DmlStageStep implements ExecutionStep {
+        private OperationsStorage operationsStorage;
+        private Orchestrator orchestrator;
+
+        private DmlStageStep(Configuration configuration) {
+            this(configuration, new OperationsStorage());
+        }
+
+        private DmlStageStep(Configuration configuration, OperationsStorage operationsStorage) {
+            this.operationsStorage = operationsStorage;
+
+            if (configuration.customOperationOrder == null) {
+                this.orchestrator = new DefaultOrchestrator(configuration);
+            } else {
+                this.orchestrator = new CustomOrderOrchestrator(configuration);
+            }
+        }
+
+        private void register(DmlOperation operation, Record record) {
+            this.orchestrator.register(this.operationsStorage.getOrRegister(operation), record);
+        }
+
+        private void register(DmlOperation operation, Records records) {
+            this.orchestrator.register(this.operationsStorage.getOrRegister(operation), records);
+        }
+
+        public void execute(DmlResult result) {
+            // DmlResult.add() aggregates per operation and SObjectType, so all stages share one result.
+            this.orchestrator.execute(result);
+        }
+
+        public String getDescription() {
+            return 'Stage';
+        }
+    }
+
+    private inherited sharing class CustomWorkStep implements ExecutionStep {
+        private Work work;
+        private DmlStageStep followingStage;
+        private Configuration configuration;
+
+        private CustomWorkStep(Work work, DmlStageStep followingStage, Configuration configuration) {
+            this.work = work;
+            this.followingStage = followingStage;
+            this.configuration = configuration;
+        }
+
+        public void execute(DmlResult result) {
+            this.work.execute(new DML(this.configuration, this.followingStage));
+        }
+
+        public String getDescription() {
+            return 'Work (' + String.valueOf(this.work).split(':')[0] + ')';
         }
     }
 
