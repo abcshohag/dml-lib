@@ -4261,25 +4261,25 @@ private class DML_Test {
         List<Account> accounts = [SELECT Id, Name FROM Account];
 
         Assert.areEqual(2, dmlStatementsAfter - dmlStatementsBefore, '2 DML statements should be executed, one per stage.');
-        Assert.areEqual(1, accounts.size(), 'Only the new account should remain in the database.');
-        Assert.areEqual(newAccount.Id, accounts[0].Id, 'The remaining account should be the one inserted in the second stage.');
+        Assert.areEqual(1, accounts.size(), 'Only the new testAccount should remain in the database.');
+        Assert.areEqual(newAccount.Id, accounts[0].Id, 'The remaining testAccount should be the one inserted in the second stage.');
 
         Assert.areEqual(2, result.all().size(), 'Result should contain results from both stages.');
         Assert.areEqual(1, result.deletes().size(), 'Result should contain 1 delete operation result.');
         Assert.areEqual(1, result.inserts().size(), 'Result should contain 1 insert operation result.');
-        Assert.areEqual(1, result.deletesOf(Account.SObjectType).successes().size(), 'Old account should be deleted.');
-        Assert.areEqual(1, result.insertsOf(Account.SObjectType).successes().size(), 'New account should be inserted.');
+        Assert.areEqual(1, result.deletesOf(Account.SObjectType).successes().size(), 'Old testAccount should be deleted.');
+        Assert.areEqual(1, result.insertsOf(Account.SObjectType).successes().size(), 'New testAccount should be inserted.');
         Assert.isFalse(result.hasFailures(), 'Result should not have failures.');
     }
 
     @IsTest
     static void nextStageUpdatesSameRecordTwice() {
         // Setup
-        Account account = getAccount(1);
-        insert account;
+        Account testAccount = getAccount(1);
+        insert testAccount;
 
-        Account firstUpdate = new Account(Id = account.Id, Name = 'First Stage');
-        Account secondUpdate = new Account(Id = account.Id, Name = 'Second Stage');
+        Account firstUpdate = new Account(Id = testAccount.Id, Name = 'First Stage');
+        Account secondUpdate = new Account(Id = testAccount.Id, Name = 'Second Stage');
 
         // Test
         Test.startTest();
@@ -4292,7 +4292,7 @@ private class DML_Test {
 
         // Verify
         Assert.areEqual(2, dmlStatementsAfter - dmlStatementsBefore, '2 DML statements should be executed, one per stage.');
-        Assert.areEqual('Second Stage', [SELECT Name FROM Account WHERE Id = :account.Id].Name, 'The second stage should run last.');
+        Assert.areEqual('Second Stage', [SELECT Name FROM Account WHERE Id = :testAccount.Id].Name, 'The second stage should run last.');
         Assert.areEqual(1, result.updates().size(), 'Updates of the same SObjectType should be aggregated into 1 operation result.');
         Assert.areEqual(2, result.updatesOf(Account.SObjectType).records().size(), 'Update operation result should contain records from both stages.');
     }
@@ -4300,43 +4300,43 @@ private class DML_Test {
     @IsTest
     static void nextStageWithRelationshipToRecordFromPreviousStage() {
         // Setup
-        Account account = getAccount(1);
-        Contact contact = getContact(1);
+        Account testAccount = getAccount(1);
+        Contact testContact = getContact(1);
 
         // Test
         Test.startTest();
         Integer dmlStatementsBefore = Limits.getDMLStatements();
 
-        new DML().toInsert(account).nextStage().toInsert(DML.Record(contact).withRelationship(Contact.AccountId, account)).commitWork();
+        new DML().toInsert(testAccount).nextStage().toInsert(DML.Record(testContact).withRelationship(Contact.AccountId, testAccount)).commitWork();
 
         Integer dmlStatementsAfter = Limits.getDMLStatements();
         Test.stopTest();
 
         // Verify
         Assert.areEqual(2, dmlStatementsAfter - dmlStatementsBefore, '2 DML statements should be executed, one per stage.');
-        Assert.isNotNull(account.Id, 'Account should be inserted.');
-        Assert.areEqual(account.Id, [SELECT AccountId FROM Contact WHERE Id = :contact.Id].AccountId, 'Contact should be related to the account inserted in the first stage.');
+        Assert.isNotNull(testAccount.Id, 'Account should be inserted.');
+        Assert.areEqual(testAccount.Id, [SELECT AccountId FROM Contact WHERE Id = :testContact.Id].AccountId, 'Contact should be related to the testAccount inserted in the first stage.');
     }
 
     @IsTest
     static void nextStageWithCustomOperationOrder() {
         // Setup
-        Account account = getAccount(1);
-        insert account;
+        Account testAccount = getAccount(1);
+        insert testAccount;
 
         Account newAccount = getAccount(2);
 
         // Test
         Test.startTest();
         DML.Result result = new DML(new List<DML.OperationType>{ DML.OperationType.INSERT_DML, DML.OperationType.DELETE_DML })
-            .toDelete(account)
+            .toDelete(testAccount)
             .nextStage()
             .toInsert(newAccount)
             .commitWork();
         Test.stopTest();
 
         // Verify
-        Assert.areEqual(1, [SELECT COUNT() FROM Account], 'Only the new account should remain in the database.');
+        Assert.areEqual(1, [SELECT COUNT() FROM Account], 'Only the new testAccount should remain in the database.');
         Assert.areEqual(1, result.deletes().size(), 'Result should contain 1 delete operation result.');
         Assert.areEqual(1, result.inserts().size(), 'Result should contain 1 insert operation result.');
     }
@@ -4361,7 +4361,7 @@ private class DML_Test {
         Assert.areEqual(1, work.queriedAccounts, 'Work should see the delete from the first stage.');
 
         Assert.areEqual('Renamed', [SELECT Name FROM Account WHERE Id = :accountToKeep.Id].Name, 'Account registered inside work should be updated in the following stage.');
-        Assert.areEqual(2, [SELECT COUNT() FROM Account], 'Remaining account and the newly inserted account should exist.');
+        Assert.areEqual(2, [SELECT COUNT() FROM Account], 'Remaining testAccount and the newly inserted testAccount should exist.');
         Assert.isNotNull(accountToInsert.Id, 'Account registered after doWork() should be inserted in the following stage.');
 
         Assert.areEqual(1, result.deletes().size(), 'Result should contain 1 delete operation result.');
@@ -4390,14 +4390,14 @@ private class DML_Test {
     @IsTest
     static void doWorkWhenWorkCommitsScopedDml() {
         // Setup
-        Account account = getAccount(1);
+        Account testAccount = getAccount(1);
 
         // Test
         Test.startTest();
         Exception expectedException = null;
 
         try {
-            new DML().toInsert(account).doWork(new CommitInsideWork()).commitTransaction();
+            new DML().toInsert(testAccount).doWork(new CommitInsideWork()).commitTransaction();
         } catch (Exception e) {
             expectedException = e;
         }
@@ -4435,21 +4435,21 @@ private class DML_Test {
         List<Account> accounts = [SELECT Id FROM Account];
 
         Assert.isNotNull(expectedException, 'Expected exception should be thrown.');
-        Assert.areEqual(1, accounts.size(), 'Only the original account should exist.');
+        Assert.areEqual(1, accounts.size(), 'Only the original testAccount should exist.');
         Assert.areEqual(accountToDelete.Id, accounts[0].Id, 'Delete from the first stage should be rolled back.');
     }
 
     @IsTest
     static void commitTransactionRollsBackAllStagesWhenWorkThrows() {
         // Setup
-        Account account = getAccount(1);
+        Account testAccount = getAccount(1);
 
         // Test
         Test.startTest();
         Exception expectedException = null;
 
         try {
-            new DML().toInsert(account).doWork(new ThrowingWork()).toInsert(getAccount(2)).commitTransaction();
+            new DML().toInsert(testAccount).doWork(new ThrowingWork()).toInsert(getAccount(2)).commitTransaction();
         } catch (Exception e) {
             expectedException = e;
         }
@@ -4512,7 +4512,7 @@ private class DML_Test {
         Assert.areEqual(0, discardedResult.all().size(), 'Discarded result should contain 0 operation results.');
         Assert.areEqual(1, dmlStatementsAfter - dmlStatementsAfterDiscard, 'Only 1 DML statement should be made after discarding stages.');
         Assert.areEqual(1, result.inserts().size(), 'Result should contain 1 insert operation result.');
-        Assert.areEqual(1, [SELECT COUNT() FROM Account], 'Only the account registered after discardWork() should be inserted.');
+        Assert.areEqual(1, [SELECT COUNT() FROM Account], 'Only the testAccount registered after discardWork() should be inserted.');
     }
 
     @IsTest
@@ -4535,7 +4535,7 @@ private class DML_Test {
         Assert.areEqual(1, result.deletes().size(), 'Result should contain 1 delete operation result.');
         Assert.areEqual(1, result.inserts().size(), 'Result should contain 1 insert operation result.');
         Assert.areEqual(1, accounts.size(), 'Dry run should not persist any stage.');
-        Assert.areEqual(accountToDelete.Id, accounts[0].Id, 'Deleted account should be restored after the dry run.');
+        Assert.areEqual(accountToDelete.Id, accounts[0].Id, 'Deleted testAccount should be restored after the dry run.');
     }
 
     @IsTest
@@ -4590,8 +4590,8 @@ private class DML_Test {
         Test.stopTest();
 
         // Verify
-        Assert.areEqual(1, [SELECT COUNT() FROM Account], 'Valid account from the second stage should be inserted.');
-        Assert.isNotNull(validAccount.Id, 'Valid account should have an Id.');
+        Assert.areEqual(1, [SELECT COUNT() FROM Account], 'Valid testAccount from the second stage should be inserted.');
+        Assert.isNotNull(validAccount.Id, 'Valid testAccount should have an Id.');
         Assert.isTrue(result.hasFailures(), 'Result should contain the failure from the first stage.');
         Assert.areEqual(1, result.failures().size(), 'Result should contain 1 failed record.');
         Assert.areEqual(1, result.insertsOf(Account.SObjectType).successes().size(), 'Result should contain 1 successful insert.');
@@ -4641,15 +4641,15 @@ private class DML_Test {
     @IsTest
     static void insertImmediatelyAfterNextStage() {
         // Setup
-        Account account = getAccount(1);
+        Account testAccount = getAccount(1);
 
         // Test
         Test.startTest();
-        DML.OperationResult result = new DML().nextStage().insertImmediately(account);
+        DML.OperationResult result = new DML().nextStage().insertImmediately(testAccount);
         Test.stopTest();
 
         // Verify
-        Assert.isNotNull(account.Id, 'Account should be inserted immediately.');
+        Assert.isNotNull(testAccount.Id, 'Account should be inserted immediately.');
         Assert.areEqual(1, result.successes().size(), 'Operation result should contain 1 success.');
     }
 
@@ -4679,19 +4679,19 @@ private class DML_Test {
     @IsTest
     static void doWorkSeesIdsFromPreviousStage() {
         // Setup
-        Account account = getAccount(1);
-        RelatedContactWork work = new RelatedContactWork(account);
+        Account testAccount = getAccount(1);
+        RelatedContactWork work = new RelatedContactWork(testAccount);
 
         // Test
         Test.startTest();
-        DML.Result result = new DML().toInsert(account).doWork(work).commitWork();
+        DML.Result result = new DML().toInsert(testAccount).doWork(work).commitWork();
         Test.stopTest();
 
         // Verify
         Assert.isNotNull(work.accountIdSeenInWork, 'Account Id should be available inside work.');
-        Assert.areEqual(account.Id, work.accountIdSeenInWork, 'Work should see the Id generated in the previous stage.');
-        Assert.areEqual(1, [SELECT COUNT() FROM Contact WHERE AccountId = :account.Id], 'Contact registered inside work should be inserted and related to the account.');
-        Assert.areEqual(2, result.inserts().size(), 'Result should contain account and contact inserts.');
+        Assert.areEqual(testAccount.Id, work.accountIdSeenInWork, 'Work should see the Id generated in the previous stage.');
+        Assert.areEqual(1, [SELECT COUNT() FROM Contact WHERE AccountId = :testAccount.Id], 'Contact registered inside work should be inserted and related to the testAccount.');
+        Assert.areEqual(2, result.inserts().size(), 'Result should contain testAccount and testContact inserts.');
     }
 
     @IsTest
@@ -4717,11 +4717,11 @@ private class DML_Test {
     @IsTest
     static void doWorkChainedWorksRunInOrder() {
         // Setup
-        Account account = getAccount(1);
-        insert account;
+        Account testAccount = getAccount(1);
+        insert testAccount;
 
-        AppendToNameWork firstWork = new AppendToNameWork(account.Id, ' A');
-        AppendToNameWork secondWork = new AppendToNameWork(account.Id, ' B');
+        AppendToNameWork firstWork = new AppendToNameWork(testAccount.Id, ' A');
+        AppendToNameWork secondWork = new AppendToNameWork(testAccount.Id, ' B');
 
         // Test
         Test.startTest();
@@ -4729,14 +4729,14 @@ private class DML_Test {
         Test.stopTest();
 
         // Verify
-        Assert.areEqual(account.Name + ' A B', [SELECT Name FROM Account WHERE Id = :account.Id].Name, 'Second work should see the update queued by the first work.');
+        Assert.areEqual(testAccount.Name + ' A B', [SELECT Name FROM Account WHERE Id = :testAccount.Id].Name, 'Second work should see the update queued by the first work.');
     }
 
     @IsTest
     static void doWorkWithMockedDml() {
         // Setup
-        Account account = getAccount(1);
-        account.Id = DML.randomIdGenerator.get(Account.SObjectType);
+        Account testAccount = getAccount(1);
+        testAccount.Id = DML.randomIdGenerator.get(Account.SObjectType);
 
         DML.mock('stagesWorkMockId').allDmls();
 
@@ -4744,7 +4744,7 @@ private class DML_Test {
         Test.startTest();
         Integer dmlStatementsBefore = Limits.getDMLStatements();
 
-        new DML().toDelete(account).doWork(new InsertAccountWork()).identifier('stagesWorkMockId').commitWork();
+        new DML().toDelete(testAccount).doWork(new InsertAccountWork()).identifier('stagesWorkMockId').commitWork();
 
         Integer dmlStatementsAfter = Limits.getDMLStatements();
         Test.stopTest();
@@ -4778,8 +4778,8 @@ private class DML_Test {
     @IsTest
     static void commitTransactionRollsBackWorkStageWhenFollowingStageFails() {
         // Setup
-        Account account = getAccount(1);
-        insert account;
+        Account testAccount = getAccount(1);
+        insert testAccount;
 
         Account invalidAccount = getAccount(2);
         invalidAccount.Name = null;
@@ -4789,7 +4789,7 @@ private class DML_Test {
         Exception expectedException = null;
 
         try {
-            new DML().doWork(new AppendToNameWork(account.Id, ' Changed')).nextStage().toInsert(invalidAccount).commitTransaction();
+            new DML().doWork(new AppendToNameWork(testAccount.Id, ' Changed')).nextStage().toInsert(invalidAccount).commitTransaction();
         } catch (Exception e) {
             expectedException = e;
         }
@@ -4797,8 +4797,8 @@ private class DML_Test {
 
         // Verify
         Assert.isNotNull(expectedException, 'Expected exception should be thrown.');
-        Assert.areEqual(account.Name, [SELECT Name FROM Account WHERE Id = :account.Id].Name, 'Update registered inside work should be rolled back.');
-        Assert.areEqual(1, [SELECT COUNT() FROM Account], 'No new account should be inserted.');
+        Assert.areEqual(testAccount.Name, [SELECT Name FROM Account WHERE Id = :testAccount.Id].Name, 'Update registered inside work should be rolled back.');
+        Assert.areEqual(1, [SELECT COUNT() FROM Account], 'No new testAccount should be inserted.');
     }
 
     public class CountingWork implements DML.Work {
@@ -4810,16 +4810,16 @@ private class DML_Test {
     }
 
     public class RelatedContactWork implements DML.Work {
-        private Account account;
+        private Account testAccount;
         private Id accountIdSeenInWork;
 
-        public RelatedContactWork(Account account) {
-            this.account = account;
+        public RelatedContactWork(Account testAccount) {
+            this.testAccount = testAccount;
         }
 
         public void execute(DML.Committable nextStage) {
-            this.accountIdSeenInWork = this.account.Id;
-            nextStage.toInsert(new Contact(LastName = 'Work Contact', AccountId = this.account.Id));
+            this.accountIdSeenInWork = this.testAccount.Id;
+            nextStage.toInsert(new Contact(LastName = 'Work Contact', AccountId = this.testAccount.Id));
         }
     }
 
@@ -4833,9 +4833,9 @@ private class DML_Test {
         }
 
         public void execute(DML.Committable nextStage) {
-            Account account = [SELECT Id, Name FROM Account WHERE Id = :this.accountId];
-            account.Name = account.Name + this.suffix;
-            nextStage.toUpdate(account);
+            Account testAccount = [SELECT Id, Name FROM Account WHERE Id = :this.accountId];
+            testAccount.Name = testAccount.Name + this.suffix;
+            nextStage.toUpdate(testAccount);
         }
     }
 
@@ -4900,8 +4900,8 @@ private class DML_Test {
             List<Account> remainingAccounts = [SELECT Id FROM Account];
             this.queriedAccounts = remainingAccounts.size();
 
-            for (Account account : remainingAccounts) {
-                account.Name = 'Renamed';
+            for (Account testAccount : remainingAccounts) {
+                testAccount.Name = 'Renamed';
             }
 
             nextStage.toUpdate(remainingAccounts);
