@@ -78,7 +78,7 @@ Committable doWork(DML.Work work);
 
 ```apex
 public interface Work {
-    void execute(DML.Committable nextStage);
+  void execute(DML.Committable nextStage);
 }
 ```
 
@@ -93,22 +93,27 @@ new DML()
 
 ```apex
 public class RollUpWonRevenue implements DML.Work {
-    private Set<Id> accountIds;
+  private Set<Id> accountIds;
 
-    public RollUpWonRevenue(Set<Id> accountIds) {
-        this.accountIds = accountIds;
-    }
+  public RollUpWonRevenue(Set<Id> accountIds) {
+    this.accountIds = accountIds;
+  }
 
-    public void execute(DML.Committable nextStage) {
-        for (AggregateResult row : [
-            SELECT AccountId, SUM(Amount) total
-            FROM Opportunity
-            WHERE AccountId IN :this.accountIds AND StageName = 'Closed Won'
-            GROUP BY AccountId
-        ]) {
-            nextStage.toUpdate(new Account(Id = (Id) row.get('AccountId'), AnnualRevenue = (Decimal) row.get('total')));
-        }
+  public void execute(DML.Committable nextStage) {
+    for (AggregateResult row : [
+      SELECT AccountId, SUM(Amount) total
+      FROM Opportunity
+      WHERE AccountId IN :this.accountIds AND StageName = 'Closed Won'
+      GROUP BY AccountId
+    ]) {
+      nextStage.toUpdate(
+        new Account(
+          Id = (Id) row.get('AccountId'),
+          AnnualRevenue = (Decimal) row.get('total')
+        )
+      );
     }
+  }
 }
 ```
 
@@ -116,20 +121,22 @@ Several `doWork()` calls in a row run in order, and each sees what the previous 
 
 ::: warning
 The `Committable` passed to `execute()` only registers records. Calling `nextStage()`, `doWork()`, `discardWork()`, `commitHook()`, `dryRun()`, `commitWork()` or `commitTransaction()` on it throws a `DmlException`.
+
+Configuration methods throw too (`identifier()`, `userMode()`, `systemMode()`, `accessMode()`, `withSharing()`, `withoutSharing()`, `allowPartialSuccess()`, `skipDuplicateRules()`, `includeOperationIdInErrorMessage()`, `combineOnDuplicate()`, `options()` and `chunkSize()`), because they would change the configuration of the stages that are still running. Configure the unit of work before you commit it.
 :::
 
 ## How stages work with other features
 
-| Feature | Behavior with stages |
-| --- | --- |
-| `commitTransaction()` | One savepoint covers every stage, including work. A failure in any stage rolls all of them back. |
-| `Result` | One result for all stages, merged by operation type and object type. |
-| `identifier()` and [mocking](/mocking/mocking) | Apply to every stage, including records registered inside work. |
-| [Commit hooks](/advanced/commit-hooks) | `before()` runs once before the first stage, `after()` once after the last. |
-| `dryRun()` | Runs every stage and every work inside its savepoint, then rolls back. |
-| `discardWork()` | Drops all stages and work. |
-| `preview()` | Prints the stages, for example `Stage 1 -> Work (RollUpWonRevenue) -> Stage 2`. |
-| `allowPartialSuccess()` | A failed record does not stop later stages. |
-| `chunkSize()` | Applies within each stage. |
+| Feature                                        | Behavior with stages                                                                                                                                                                                          |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `commitTransaction()`                          | One savepoint covers every stage, including work. A failure in any stage rolls all of them back.                                                                                                              |
+| `Result`                                       | One result for all stages, merged by operation type and object type.                                                                                                                                          |
+| `identifier()` and [mocking](/mocking/mocking) | Apply to every stage, including records registered inside work.                                                                                                                                               |
+| [Commit hooks](/advanced/commit-hooks)         | `before()` runs once before the first stage, `after()` once after the last.                                                                                                                                   |
+| `dryRun()`                                     | Runs every stage and every work inside its savepoint, then rolls back. Records registered inside work stay queued afterwards, so build a new unit of work instead of committing the same one after a dry run. |
+| `discardWork()`                                | Drops all stages and work.                                                                                                                                                                                    |
+| `preview()`                                    | Prints the stages, for example `Stage 1 -> Work (RollUpWonRevenue) -> Stage 2`.                                                                                                                               |
+| `allowPartialSuccess()`                        | A failed record does not stop later stages.                                                                                                                                                                   |
+| `chunkSize()`                                  | Applies within each stage.                                                                                                                                                                                    |
 
 After `commitWork()` the unit of work starts again with a single empty stage.

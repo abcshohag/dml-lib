@@ -1,3 +1,9 @@
+/**
+ * PMD False Positives:
+ * - ApexUnitTestClassShouldHaveRunAs: examples run as the test user on purpose
+ * - ApexUnitTestClassShouldHaveRunRelevantTestsAnnotation: same as DML_Test, these are plain library tests
+ **/
+@SuppressWarnings('PMD.ApexUnitTestClassShouldHaveRunAs,PMD.ApexUnitTestClassShouldHaveRunRelevantTestsAnnotation')
 @IsTest
 private class DML_Usage_Examples_Test {
     // ============ EXISTING USAGE (must keep working) ============
@@ -55,10 +61,7 @@ private class DML_Usage_Examples_Test {
 
     @IsTest
     static void existingPartialSuccess() {
-        DML.Result result = new DML()
-            .toInsert(new List<Contact>{ new Contact(LastName = 'Ok'), new Contact() })
-            .allowPartialSuccess()
-            .commitWork();
+        DML.Result result = new DML().toInsert(new List<Contact>{ new Contact(LastName = 'Ok'), new Contact() }).allowPartialSuccess().commitWork();
 
         Assert.areEqual(1, result.insertsOf(Contact.SObjectType).failures().size(), 'Contact without LastName should fail.');
         Assert.areEqual(1, [SELECT COUNT() FROM Contact], 'Valid contact should be inserted.');
@@ -89,11 +92,7 @@ private class DML_Usage_Examples_Test {
     static void newNextStageDeleteBeforeInsert() {
         insert new Account(Name = 'Yesterday');
 
-        DML.Result result = new DML()
-            .toDelete([SELECT Id FROM Account])
-            .nextStage()
-            .toInsert(new Account(Name = 'Today'))
-            .commitTransaction();
+        DML.Result result = new DML().toDelete([SELECT Id FROM Account]).nextStage().toInsert(new Account(Name = 'Today')).commitTransaction();
 
         Assert.areEqual('Today', [SELECT Name FROM Account].Name, 'Only the account from the second stage should remain.');
         Assert.areEqual(1, result.deletes().size(), 'Result should contain the delete from the first stage.');
@@ -105,11 +104,7 @@ private class DML_Usage_Examples_Test {
         Account acc = new Account(Name = 'Acme');
         insert acc;
 
-        new DML()
-            .toUpdate(new Account(Id = acc.Id, Rating = 'Warm'))
-            .nextStage()
-            .toUpdate(new Account(Id = acc.Id, Rating = 'Hot'))
-            .commitWork();
+        new DML().toUpdate(new Account(Id = acc.Id, Rating = 'Warm')).nextStage().toUpdate(new Account(Id = acc.Id, Rating = 'Hot')).commitWork();
 
         Assert.areEqual('Hot', [SELECT Rating FROM Account WHERE Id = :acc.Id].Rating, 'Update from the second stage should win.');
     }
@@ -128,10 +123,7 @@ private class DML_Usage_Examples_Test {
             opp.StageName = 'Closed Won';
         }
 
-        DML.Result result = new DML()
-            .toUpdate(opps)
-            .doWork(new RollUpWonRevenue(new Set<Id>{ acc.Id }))
-            .commitTransaction();
+        DML.Result result = new DML().toUpdate(opps).doWork(new RollUpWonRevenue(new Set<Id>{ acc.Id })).commitTransaction();
 
         Assert.areEqual(350, [SELECT AnnualRevenue FROM Account WHERE Id = :acc.Id].AnnualRevenue, 'Work should roll up won revenue after the first stage.');
         Assert.areEqual(2, result.updates().size(), 'Result should contain opportunity and account updates.');
@@ -143,11 +135,7 @@ private class DML_Usage_Examples_Test {
         insert acc;
 
         try {
-            new DML()
-                .toUpdate(new Account(Id = acc.Id, Name = 'Changed'))
-                .nextStage()
-                .toInsert(new Account())
-                .commitTransaction();
+            new DML().toUpdate(new Account(Id = acc.Id, Name = 'Changed')).nextStage().toInsert(new Account()).commitTransaction();
             Assert.fail('Expected the second stage to fail');
         } catch (Exception e) {
             Assert.areEqual('Keep me', [SELECT Name FROM Account WHERE Id = :acc.Id].Name, 'Update from the first stage should be rolled back.');
@@ -158,12 +146,7 @@ private class DML_Usage_Examples_Test {
     static void newStagesWithMock() {
         DML.mock('Sync').allDmls();
 
-        new DML()
-            .toDelete(DML.randomIdGenerator.get(Account.SObjectType))
-            .nextStage()
-            .toInsert(new Account(Name = 'Mocked'))
-            .identifier('Sync')
-            .commitWork();
+        new DML().toDelete(DML.randomIdGenerator.get(Account.SObjectType)).nextStage().toInsert(new Account(Name = 'Mocked')).identifier('Sync').commitWork();
 
         DML.Result result = DML.retrieveResultFor('Sync');
         Assert.areEqual(1, result.deletes().size(), 'Result should contain the mocked delete.');

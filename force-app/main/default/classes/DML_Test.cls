@@ -4315,7 +4315,11 @@ private class DML_Test {
         // Verify
         Assert.areEqual(2, dmlStatementsAfter - dmlStatementsBefore, '2 DML statements should be executed, one per stage.');
         Assert.isNotNull(testAccount.Id, 'Account should be inserted.');
-        Assert.areEqual(testAccount.Id, [SELECT AccountId FROM Contact WHERE Id = :testContact.Id].AccountId, 'Contact should be related to the testAccount inserted in the first stage.');
+        Assert.areEqual(
+            testAccount.Id,
+            [SELECT AccountId FROM Contact WHERE Id = :testContact.Id].AccountId,
+            'Contact should be related to the testAccount inserted in the first stage.'
+        );
     }
 
     @IsTest
@@ -4554,6 +4558,7 @@ private class DML_Test {
         Assert.areEqual(2, hook.insertedRecords, 'after() should receive the result of all stages.');
     }
 
+    @SuppressWarnings('PMD.ApexUnitTestClassShouldHaveAsserts')
     @IsTest
     static void previewWithStages() {
         // Test
@@ -4776,6 +4781,20 @@ private class DML_Test {
     }
 
     @IsTest
+    static void doWorkScopedCommittableRejectsConfigurationMethods() {
+        // Setup
+        ConfigurationCheckingWork work = new ConfigurationCheckingWork();
+
+        // Test
+        Test.startTest();
+        new DML().doWork(work).commitWork();
+        Test.stopTest();
+
+        // Verify
+        Assert.areEqual(work.methods, work.rejectedMethods, 'Every configuration method should be rejected inside work.');
+    }
+
+    @IsTest
     static void commitTransactionRollsBackWorkStageWhenFollowingStageFails() {
         // Setup
         Account testAccount = getAccount(1);
@@ -4893,9 +4912,80 @@ private class DML_Test {
         }
     }
 
+    public class ConfigurationCheckingWork implements DML.Work {
+        private final List<String> methods = new List<String>{
+            'identifier()',
+            'userMode()',
+            'systemMode()',
+            'accessMode()',
+            'withSharing()',
+            'withoutSharing()',
+            'allowPartialSuccess()',
+            'skipDuplicateRules()',
+            'includeOperationIdInErrorMessage()',
+            'combineOnDuplicate()',
+            'options()',
+            'chunkSize()'
+        };
+
+        private List<String> rejectedMethods = new List<String>();
+
+        public void execute(DML.Committable nextStage) {
+            for (String methodName : this.methods) {
+                try {
+                    this.call(nextStage, methodName);
+                } catch (DmlException e) {
+                    this.rejectedMethods.add(methodName);
+                }
+            }
+        }
+
+        private void call(DML.Committable nextStage, String methodName) {
+            switch on methodName {
+                when 'identifier()' {
+                    nextStage.identifier('changedInWork');
+                }
+                when 'userMode()' {
+                    nextStage.userMode();
+                }
+                when 'systemMode()' {
+                    nextStage.systemMode();
+                }
+                when 'accessMode()' {
+                    nextStage.accessMode(System.AccessLevel.SYSTEM_MODE);
+                }
+                when 'withSharing()' {
+                    nextStage.withSharing();
+                }
+                when 'withoutSharing()' {
+                    nextStage.withoutSharing();
+                }
+                when 'allowPartialSuccess()' {
+                    nextStage.allowPartialSuccess();
+                }
+                when 'skipDuplicateRules()' {
+                    nextStage.skipDuplicateRules();
+                }
+                when 'includeOperationIdInErrorMessage()' {
+                    nextStage.includeOperationIdInErrorMessage();
+                }
+                when 'combineOnDuplicate()' {
+                    nextStage.combineOnDuplicate();
+                }
+                when 'options()' {
+                    nextStage.options(new Database.DmlOptions());
+                }
+                when 'chunkSize()' {
+                    nextStage.chunkSize(10);
+                }
+            }
+        }
+    }
+
     public class RenameRemainingAccountsWork implements DML.Work {
         private Integer queriedAccounts;
 
+        @SuppressWarnings('PMD.AvoidNonRestrictiveQueries')
         public void execute(DML.Committable nextStage) {
             List<Account> remainingAccounts = [SELECT Id FROM Account];
             this.queriedAccounts = remainingAccounts.size();

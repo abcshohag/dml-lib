@@ -689,6 +689,7 @@ global inherited sharing class DML implements Committable {
     // Identifier
 
     global Committable identifier(String dmlIdentifier) {
+        this.assertNotInWorkScope('identifier()');
         this.configuration.dmlIdentifier = dmlIdentifier;
         return this;
     }
@@ -717,23 +718,23 @@ global inherited sharing class DML implements Committable {
             stepDescriptions.add(step.getDescription());
         }
 
-        System.debug(
-            LoggingLevel.ERROR,
-            '\n\n============ DML Stages ============' + '\n' + String.join(stepDescriptions, ' -> ') + '\n=======================================\n'
-        );
+        System.debug(LoggingLevel.ERROR, '\n\n============ DML Stages ============' + '\n' + String.join(stepDescriptions, ' -> ') + '\n=======================================\n');
     }
 
     // Field Level Security
 
     global Committable userMode() {
+        this.assertNotInWorkScope('userMode()');
         return this.accessMode(System.AccessLevel.USER_MODE);
     }
 
     global Committable systemMode() {
+        this.assertNotInWorkScope('systemMode()');
         return this.accessMode(System.AccessLevel.SYSTEM_MODE);
     }
 
     global Committable accessMode(System.AccessLevel accessMode) {
+        this.assertNotInWorkScope('accessMode()');
         this.configuration.accessMode = accessMode;
         return this;
     }
@@ -741,11 +742,13 @@ global inherited sharing class DML implements Committable {
     // Sharing Mode
 
     global Committable withSharing() {
+        this.assertNotInWorkScope('withSharing()');
         this.configuration.sharingExecutor = new WithSharing();
         return this;
     }
 
     global Committable withoutSharing() {
+        this.assertNotInWorkScope('withoutSharing()');
         this.configuration.sharingExecutor = new WithoutSharing();
         return this;
     }
@@ -753,31 +756,37 @@ global inherited sharing class DML implements Committable {
     // Other configs
 
     global Committable allowPartialSuccess() {
+        this.assertNotInWorkScope('allowPartialSuccess()');
         this.configuration.allowPartialSuccess();
         return this;
     }
 
     global Committable skipDuplicateRules() {
+        this.assertNotInWorkScope('skipDuplicateRules()');
         this.configuration.options.duplicateRuleHeader.allowSave = true;
         return this;
     }
 
     global Committable includeOperationIdInErrorMessage() {
+        this.assertNotInWorkScope('includeOperationIdInErrorMessage()');
         this.configuration.includeOperationIdInErrorMessage = true;
         return this;
     }
 
     global Committable combineOnDuplicate() {
+        this.assertNotInWorkScope('combineOnDuplicate()');
         this.configuration.duplicateCombineStrategy = new MergeDuplicateStrategy();
         return this;
     }
 
     global Committable options(Database.DmlOptions options) {
+        this.assertNotInWorkScope('options()');
         this.configuration.options(options);
         return this;
     }
 
     global Committable chunkSize(Integer chunkSize) {
+        this.assertNotInWorkScope('chunkSize()');
         this.configuration.chunkSize = chunkSize;
         return this;
     }
