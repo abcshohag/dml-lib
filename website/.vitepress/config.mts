@@ -192,6 +192,7 @@ const current = [
       { text: 'Shared Instance', link: '/advanced/shared-instance' },
       { text: 'Commit Hooks', link: '/advanced/commit-hooks' },
       { text: 'Execution Control', link: '/advanced/execution-control' },
+      { text: 'Stages', link: '/advanced/stages' },
       { text: 'Error Logger', link: '/advanced/logger' }
     ]
   },
